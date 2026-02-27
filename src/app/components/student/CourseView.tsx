@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { User, Course, Enrollment, Lesson } from '../../types';
 import { mockAssignments, mockSubmissions } from '../../lib/mock-data';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -17,9 +17,11 @@ interface CourseViewProps {
   course: Course;
   enrollment?: Enrollment;
   onBack: () => void;
+  onEnroll?: (course: Course) => void;
+  onUpdateEnrollment?: (updated: Enrollment) => void;
 }
 
-export function CourseView({ user, course, enrollment, onBack }: CourseViewProps) {
+export function CourseView({ user, course, enrollment, onBack, onEnroll, onUpdateEnrollment }: CourseViewProps) {
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(
     course.lessons.length > 0 ? course.lessons[0] : null
   );
@@ -28,6 +30,14 @@ export function CourseView({ user, course, enrollment, onBack }: CourseViewProps
     enrollment?.completedLessons || []
   );
 
+  // if the enrollment prop updates (e.g. user just enrolled), make sure we reflect
+  // the completed lessons in our local state
+  useEffect(() => {
+    if (enrollment) {
+      setCompletedLessons(enrollment.completedLessons || []);
+    }
+  }, [enrollment]);
+
   const assignments = mockAssignments.filter(a => a.courseId === course.id);
   const mySubmissions = mockSubmissions.filter(s =>
     assignments.some(a => a.id === s.assignmentId) && s.studentId === enrollment?.studentId
@@ -35,14 +45,27 @@ export function CourseView({ user, course, enrollment, onBack }: CourseViewProps
 
   const handleCompleteLesson = (lessonId: string) => {
     if (!completedLessons.includes(lessonId)) {
-      setCompletedLessons([...completedLessons, lessonId]);
+      const updated = [...completedLessons, lessonId];
+      setCompletedLessons(updated);
       console.log('Lesson completed:', lessonId);
+
+      if (enrollment && onUpdateEnrollment) {
+        const progress = Math.round((updated.length / course.lessons.length) * 100);
+        onUpdateEnrollment({
+          ...enrollment,
+          completedLessons: updated,
+          progress
+        });
+      }
     }
   };
 
   const handleEnroll = () => {
-    console.log('Enrolling in course:', course.id);
-    // In a real app, this would create an enrollment record
+    if (onEnroll) {
+      onEnroll(course);
+    } else {
+      console.log('Enrolling in course:', course.id);
+    }
   };
 
   const isLessonComplete = (lessonId: string) => completedLessons.includes(lessonId);

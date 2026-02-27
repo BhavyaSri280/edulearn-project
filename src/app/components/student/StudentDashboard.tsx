@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Course, Enrollment, User } from '../../types';
-import { mockCourses, mockEnrollments } from '../../lib/mock-data';
+import { mockCourses, mockEnrollments, loadEnrollments, saveEnrollments } from '../../lib/mock-data';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -30,7 +30,11 @@ export function StudentDashboard({ user, onLogout }: StudentDashboardProps) {
   const [selectedLevel, setSelectedLevel] = useState('all');
   const [sortOrder, setSortOrder] = useState('popular');
 
-  const enrollments = mockEnrollments.filter(e => e.studentId === user.id);
+  // keep track of all enrollments in state so that we can update the UI when a student enrolls
+  const [allEnrollments, setAllEnrollments] = useState<Enrollment[]>(() => loadEnrollments());
+
+  // helper to derive this student's enrollments and related course lists
+  const enrollments = allEnrollments.filter(e => e.studentId === user.id);
   const enrolledCourseIds = enrollments.map(e => e.courseId);
   const enrolledCourses = mockCourses.filter(c =>
     enrollments.some(e => e.courseId === c.id)
@@ -86,6 +90,50 @@ export function StudentDashboard({ user, onLogout }: StudentDashboardProps) {
     );
   }
 
+  // enrollment handler passed down to CourseView so that the student can enroll inside the course detail
+  const handleEnroll = (course: Course) => {
+    const newEnroll: Enrollment = {
+      id: `enroll-${Date.now()}`,
+      studentId: user.id,
+      courseId: course.id,
+      enrolledAt: new Date().toISOString().split('T')[0],
+      progress: 0,
+      completedLessons: [],
+    };
+
+    // persist globally
+    mockEnrollments.push(newEnroll);
+    setAllEnrollments(prev => {
+      const updated = [...prev, newEnroll];
+      saveEnrollments(updated);
+      return updated;
+    });
+  };
+
+  // handler for lessons/progress updates bubbling up from CourseView
+  const handleUpdateEnrollment = (updated: Enrollment) => {
+    // update local state and global mocks
+    setAllEnrollments(prev => {
+      const idx = prev.findIndex(e => e.id === updated.id);
+      let newList;
+      if (idx !== -1) {
+        newList = [...prev];
+        newList[idx] = updated;
+      } else {
+        newList = [...prev, updated];
+      }
+      // also sync the mock array so others can read
+      const globalIdx = mockEnrollments.findIndex(e => e.id === updated.id);
+      if (globalIdx !== -1) {
+        mockEnrollments[globalIdx] = updated;
+      } else {
+        mockEnrollments.push(updated);
+      }
+      saveEnrollments(newList);
+      return newList;
+    });
+  };
+
   if (selectedCourse) {
     // If a course is selected, we temporarily override the view, 
     // but keep the layout if we want, OR we can hide the sidebar for focus mode.
@@ -113,6 +161,8 @@ export function StudentDashboard({ user, onLogout }: StudentDashboardProps) {
           course={selectedCourse}
           enrollment={enrollments.find(e => e.courseId === selectedCourse.id)}
           onBack={() => setSelectedCourse(null)}
+          onEnroll={handleEnroll}
+          onUpdateEnrollment={handleUpdateEnrollment}
         />
       </DashboardLayout>
     );
